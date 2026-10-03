@@ -215,7 +215,9 @@
   }
 
   /* Вторичные кнопки: контуром, чтобы главная в футере осталась главной. */
-  .share { display: flex; gap: 8px; margin-top: 4px; }
+  /* Снизу отступ больше, чем кажется нужным: над липким футером лежит
+     градиентная подложка высотой 18px, и без запаса кнопки уходят под неё. */
+  .share { display: flex; gap: 8px; margin: 4px 0 28px; }
   .share button {
     flex: 1; padding: 12px 10px;
     background: var(--bg); color: var(--btn);
@@ -676,6 +678,10 @@ function resultLink(key) {
   return url.href;
 }
 
+function testLink() {
+  return new URL(location.href);
+}
+
 // Пересылка в чат: нативная шторка Telegram, сообщение уходит от имени
 // пользователя. Вне Telegram (версия 6.0) открываем ссылку обычной вкладкой,
 // чтобы кнопку можно было проверить в браузере.
@@ -693,10 +699,13 @@ function shareToChat(key) {
 // условно — иначе у остальных вызов отвалится.
 function shareStory(key) {
   const character = CHARACTERS[key];
-  const params = { text: `${character.name} — вот кто я. ${QUIZ_TITLE}` };
+  const params = {};
   const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
   if (user && user.is_premium) {
-    params.widget_link = { url: resultLink(key), name: QUIZ_TITLE };
+    params.widget_link = {
+      url: testLink(),
+      name: `Я — ${character.name}. ${QUIZ_TITLE}`,
+    };
   }
   tg.shareToStory(new URL(character.img, location.href).href, params);
 }
