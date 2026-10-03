@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Кто ты из ветки Талалы?</title>
 
 <!-- Обязательно до нашего кода: этот скрипт создаёт window.Telegram.WebApp -->
@@ -31,6 +31,15 @@
   }
 
   * { box-sizing: border-box; }
+
+  /* Запрет зума. touch-action: pan-x pan-y оставляет прокрутку, но убирает
+     щипок двумя пальцами и зум по двойному тапу. text-size-adjust не даёт
+     мобильному движку самовольно раздувать шрифт. */
+  html {
+    touch-action: pan-x pan-y;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     margin: 0;
     /* Три объявления подряд: браузер берёт последнее, которое понимает.
@@ -450,9 +459,19 @@ if (!tg) {
   throw new Error('Telegram WebApp SDK not available');
 }
 
-const insideTelegram = Boolean(tg.initData) || tg.platform !== 'unknown';
+// const insideTelegram = Boolean(tg.initData) || tg.platform !== 'unknown';
 
 document.title = QUIZ_TITLE;
+
+/* Safari и WKWebView игнорируют и user-scalable=no, и touch-action,
+   поэтому щипок там гасится только отменой собственных gesture-событий.
+   Отдельно — Ctrl+колесо: так зумят трекпадом в десктопном клиенте. */
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, e => e.preventDefault(), { passive: false });
+}
+document.addEventListener('wheel', e => {
+  if (e.ctrlKey) e.preventDefault();
+}, { passive: false });
 
 tg.ready();    // говорим клиенту «я отрисовался», он убирает лоадер
 tg.expand();   // разворачиваем на всю доступную высоту
@@ -707,12 +726,12 @@ function render() {
   else if (state.step >= QUESTIONS.length) renderResult();
   else renderQuestion();
 
-  // Назад есть везде, кроме приветствия.
-  // Вне Telegram BackButton недоступна — не трогаем, чтобы не сорить в консоль.
-  if (insideTelegram) {
-    if (state.step > INTRO) tg.BackButton.show();
-    else tg.BackButton.hide();
-  }
+  // // Назад есть везде, кроме приветствия.
+  // // Вне Telegram BackButton недоступна — не трогаем, чтобы не сорить в консоль.
+  // if (insideTelegram) {
+  //   if (state.step > INTRO) tg.BackButton.show();
+  //   else tg.BackButton.hide();
+  // }
 
   window.scrollTo(0, 0);
 }
