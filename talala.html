@@ -214,6 +214,16 @@
     pointer-events: none;
   }
 
+  /* Вторичные кнопки: контуром, чтобы главная в футере осталась главной. */
+  .share { display: flex; gap: 8px; margin-top: 4px; }
+  .share button {
+    flex: 1; padding: 12px 10px;
+    background: var(--bg); color: var(--btn);
+    border: 1.5px solid var(--btn); border-radius: 11px;
+    font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .share button:active { opacity: .6; }
+
   .primary {
     display: block; width: 100%;
     padding: 14px;
@@ -265,6 +275,13 @@
 
 // Заголовок приложения (ставится в document.title).
 const QUIZ_TITLE = 'Кто ты из ветки Талалы?';
+
+/* Прямая ссылка на приложение для кнопки «Поделиться»: t.me/<бот>/<приложение>.
+   Заполнить после создания direct link app командой /newapp в BotFather.
+   Пока пусто — делимся обычной ссылкой на страницу, она тоже открывает
+   нужного героя через ?startapp=, просто в браузере, а не в клиенте. */
+const BOT_USERNAME   = 'memaster_chicken_bot';   // без @, например 'memaster_chicken_bot'
+const APP_SHORT_NAME = 'talala';   // short_name, который задаёшь в /newapp
 
 const CHARACTERS = {
   milfeya: {
@@ -611,7 +628,20 @@ const INTRO = -1;
 const state = {
   step: INTRO,      // INTRO → приветствие; 0..N-1 → вопрос; N → результат
   picked: [],       // picked[i] = индекс выбранного варианта в вопросе i
+  shared: null,     // ключ героя, если пришли по ссылке с ?startapp=
 };
+
+/* Результат по ссылке. Telegram кладёт значение startapp в start_param;
+   query-параметр — тот же механизм для проверки в браузере.
+   Неизвестный ключ игнорируем, иначе чужая ссылка сломала бы экран. */
+(function readStartParam() {
+  let key;
+  try {
+    key = tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+    if (!key) key = new URLSearchParams(location.search).get('startapp');
+  } catch (e) { return; }
+  if (key && Object.prototype.hasOwnProperty.call(CHARACTERS, key)) state.shared = key;
+})();
 
 /* ---------- главная кнопка ----------
    Своя кнопка в футере, а не нативная MainButton: она видна всегда и
@@ -632,6 +662,44 @@ const primary = {
 };
 
 domPrimary.addEventListener('click', () => primary.fire());
+
+/* ---------- ссылки и шеринг ---------- */
+
+// Ссылка, открывающая результат конкретного героя.
+function resultLink(key) {
+  if (BOT_USERNAME && APP_SHORT_NAME) {
+    return `https://t.me/${BOT_USERNAME}/${APP_SHORT_NAME}?startapp=${key}`;
+  }
+  const url = new URL(location.href);
+  url.hash = '';
+  url.searchParams.set('startapp', key);
+  return url.href;
+}
+
+// Пересылка в чат: нативная шторка Telegram, сообщение уходит от имени
+// пользователя. Вне Telegram (версия 6.0) открываем ссылку обычной вкладкой,
+// чтобы кнопку можно было проверить в браузере.
+function shareToChat(key) {
+  const character = CHARACTERS[key];
+  const url = 'https://t.me/share/url'
+    + '?url=' + encodeURIComponent(resultLink(key))
+    + '&text=' + encodeURIComponent(`Мой результат — ${character.name}. А ты кто?`);
+  if (tg.isVersionAtLeast('6.1')) tg.openTelegramLink(url);
+  else window.open(url, '_blank', 'noopener');
+}
+
+// Сторис: media_url должен быть абсолютным HTTPS-адресом.
+// widget_link доступен только премиум-подписчикам, поэтому добавляем его
+// условно — иначе у остальных вызов отвалится.
+function shareStory(key) {
+  const character = CHARACTERS[key];
+  const params = { text: `${character.name} — вот кто я. ${QUIZ_TITLE}` };
+  const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+  if (user && user.is_premium) {
+    params.widget_link = { url: resultLink(key), name: QUIZ_TITLE };
+  }
+  tg.shareToStory(new URL(character.img, location.href).href, params);
+}
 
 /* ---------- подсчёт очков ---------- */
 
@@ -667,7 +735,7 @@ function haptic(kind) {
 
 function renderProgress() {
   progressBox.textContent = '';
-  if (state.step === INTRO || state.step >= QUESTIONS.length) return;
+  if (state.shared || state.step === INTRO || state.step >= QUESTIONS.length) return;
 
   const label = document.createElement('span');
   label.textContent = `Вопрос ${state.step + 1} из ${QUESTIONS.length}`;
@@ -753,7 +821,8 @@ function renderQuestion() {
 }
 
 function renderResult() {
-  const character = CHARACTERS[leader(tally())];
+  const key = state.shared || leader(tally());
+  const character = CHARACTERS[key];
   screen.textContent = '';
 
   const card = document.createElement('div');
@@ -795,7 +864,29 @@ function renderResult() {
 
   screen.append(card);
 
-  primary.set('Пройти заново', () => {
+  const share = document.createElement('div');
+  share.className = 'share';
+
+  const toChat = document.createElement('button');
+  toChat.type = 'button';
+  toChat.textContent = 'Поделиться';
+  toChat.addEventListener('click', () => shareToChat(key));
+  share.append(toChat);
+
+  // Сторис появились в Bot API 7.8 — на старых клиентах кнопки просто нет,
+  // показывать неработающую хуже, чем не показывать.
+  if (tg.isVersionAtLeast('7.8')) {
+    const toStory = document.createElement('button');
+    toStory.type = 'button';
+    toStory.textContent = 'В сторис';
+    toStory.addEventListener('click', () => shareStory(key));
+    share.append(toStory);
+  }
+
+  screen.append(share);
+
+  primary.set(state.shared ? 'Пройти тест' : 'Пройти заново', () => {
+    state.shared = null;
     state.step = 0;
     state.picked = [];
     render();
@@ -804,7 +895,8 @@ function renderResult() {
 
 function render() {
   renderProgress();
-  if (state.step === INTRO) renderIntro();
+  if (state.shared) renderResult();
+  else if (state.step === INTRO) renderIntro();
   else if (state.step >= QUESTIONS.length) renderResult();
   else renderQuestion();
 
