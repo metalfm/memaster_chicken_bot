@@ -679,7 +679,7 @@ function resultLink(key) {
 }
 
 function testLink() {
-  return new URL(location.href);
+  return (new URL(location.href)).href;
 }
 
 // Пересылка в чат: нативная шторка Telegram, сообщение уходит от имени
@@ -688,8 +688,8 @@ function testLink() {
 function shareToChat(key) {
   const character = CHARACTERS[key];
   const url = 'https://t.me/share/url'
-    + '?url=' + encodeURIComponent(resultLink(key))
-    + '&text=' + encodeURIComponent(`Мой результат — ${character.name}. А ты кто?`);
+    + '?url=' + encodeURIComponent(testLink())
+    + '&text=' + encodeURIComponent(`Я — ${character.name}. А ты кто?`);
   if (tg.isVersionAtLeast('6.1')) tg.openTelegramLink(url);
   else window.open(url, '_blank', 'noopener');
 }
