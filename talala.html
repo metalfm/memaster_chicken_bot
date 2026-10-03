@@ -10,13 +10,21 @@
 <script>
   // Выставляем тему до первой отрисовки: иначе страница мигнёт фоном чужой
   // темы, а браузер успеет скачать ненужную картинку (они по 1.8 МБ).
+  //
+  // Приоритет: ?theme=light|dark → тема Telegram → системная.
+  // Telegram свои параметры кладёт в хеш (#tgWebAppData=...), так что
+  // query-строка свободна и конфликта нет.
   try {
+    var forced = new URLSearchParams(location.search).get('theme');
+    window.__forcedTheme = (forced === 'light' || forced === 'dark') ? forced : null;
+
     var w = window.Telegram && window.Telegram.WebApp;
-    // Только внутри Telegram: вне его colorScheme всегда 'light' и перебил бы
-    // системную тёмную тему — вышла бы тёмная палитра со светлым фоном.
-    if (w && (w.initData || w.platform !== 'unknown')) {
-      document.documentElement.dataset.theme = w.colorScheme;
-    }
+    // Вне Telegram colorScheme всегда 'light' и перебил бы системную тёмную
+    // тему, поэтому берём его только когда мы действительно внутри клиента.
+    var theme = window.__forcedTheme
+      || ((w && (w.initData || w.platform !== 'unknown')) ? w.colorScheme : null);
+
+    if (theme) document.documentElement.dataset.theme = theme;
   } catch (e) {}
 </script>
 
@@ -40,6 +48,21 @@
       --hint:    var(--tg-theme-hint-color, #708499);
       --section: var(--tg-theme-secondary-bg-color, #232e3c);
     }
+  }
+  /* data-theme важнее системной темы: так ?theme=... переключает не только
+     картинку фона, но и всю палитру. Внутри Telegram это ни на что не влияет —
+     там --tg-theme-* заданы и fallback-значения не используются. */
+  html[data-theme="light"] {
+    --bg:      var(--tg-theme-bg-color, #ffffff);
+    --text:    var(--tg-theme-text-color, #000000);
+    --hint:    var(--tg-theme-hint-color, #707579);
+    --section: var(--tg-theme-secondary-bg-color, #f4f4f5);
+  }
+  html[data-theme="dark"] {
+    --bg:      var(--tg-theme-bg-color, #17212b);
+    --text:    var(--tg-theme-text-color, #f5f5f5);
+    --hint:    var(--tg-theme-hint-color, #708499);
+    --section: var(--tg-theme-secondary-bg-color, #232e3c);
   }
 
   * { box-sizing: border-box; }
@@ -87,7 +110,7 @@
   .bg::after {
     content: ''; position: absolute; inset: 0;
     background: var(--bg);
-    opacity: .78;   /* ← сила приглушения узора; меньше — ярче фон, хуже текст */
+    opacity: .48;   /* ← сила приглушения узора; меньше — ярче фон, хуже текст */
   }
   @media (prefers-color-scheme: dark) {
     .bg { background-image: url('talala/dark.webp'); }
@@ -145,10 +168,7 @@
 
   .result {
     text-align: center;
-    background: var(--section);
-    border-radius: 16px;
-    padding: 26px 18px;
-    margin-bottom: 18px;
+    padding: 10px 0 18px;
   }
   /* Пропорции у картинок разные (0.56..0.70), поэтому высота по содержимому,
      а не фиксированный aspect-ratio — иначе лица обрезало бы. */
@@ -169,21 +189,13 @@
     color: var(--hint); margin: 14px 0 4px;
   }
   .result .name { font-size: 25px; font-weight: 700; margin: 0 0 10px; }
-  .result .desc { color: var(--hint); font-size: 15px; margin: 0; }
-
-  .bars { margin-bottom: 18px; }
-  .bar-row {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 14px; padding: 6px 2px;
+  /* Длинный текст по центру читается плохо, поэтому описание — по левому краю,
+     а имя и подпись над ним остаются центрированными. */
+  .result .desc { text-align: left; margin: 14px 0 0; }
+  .result .desc p {
+    color: var(--text); font-size: 15px; margin: 0 0 10px;
   }
-  .bar-row .label { flex: 0 0 38%; }
-  .bar-row .track {
-    flex: 1; height: 7px; border-radius: 4px;
-    background: color-mix(in srgb, var(--hint) 22%, transparent);
-    overflow: hidden;
-  }
-  .bar-row .fill { height: 100%; background: var(--btn); border-radius: 4px; }
-  .bar-row .num { flex: 0 0 auto; color: var(--hint); font-variant-numeric: tabular-nums; }
+  .result .desc p:last-child { margin-bottom: 0; }
 
   /* ---------- общее ---------- */
 
@@ -255,16 +267,56 @@
 const QUIZ_TITLE = 'Кто ты из ветки Талалы?';
 
 const CHARACTERS = {
-  milfeya:        { name: 'Милфея',        img: 'talala/milfea.webp', desc: '' },
-  talala:         { name: 'Талала',        img: 'talala/talala.webp', desc: '' },
-  melissa:        { name: 'Мелисса',       img: 'talala/melissa.webp', desc: '' },
-  losik:          { name: 'Лосик',         img: 'talala/losik.webp', desc: '' },
-  gelios:         { name: 'Гелиос',        img: 'talala/gelios.webp', desc: '' },
-  pahom:          { name: 'Пахом',         img: 'talala/pahom.webp', desc: '' },
-  pshen:          { name: 'Пшен',          img: 'talala/pshen.webp', desc: '' },
-  bulbuterion:    { name: 'Бульбутерион',  img: 'talala/bulbuterion.webp', desc: '' },
-  grifon_andrey:  { name: 'Грифон Андрей', img: 'talala/grifon_andrey.webp', desc: '' },
-  angelin:        { name: 'Ангелин',       img: 'talala/angelin.webp', desc: '' },
+  milfeya: {
+    name: "Милфея",
+    img:  'talala/milfea.webp',
+    desc: "Ты фея Милфея — проказница, сквернословка и профессиональная собирательница зубов. 🧚‍♀️\n\nТы обожаешь пошутить, кого-нибудь подколоть и влезть в очередную авантюру. С тобой никогда не бывает скучно — правда, окружающие иногда жалеют, что вообще тебя встретили. 😈",
+  },
+  talala: {
+    name: "Талала",
+    img:  'talala/talala.webp',
+    desc: "Ты просветлённая гномка-воин света, которая точно знает: любую проблему можно решить любовью, духовными практиками и правильно направленной женской энергией.\n\nТы прошла через многое, приняла свои травмы и теперь готова спасать мир. Даже если для этого придётся в одиночку остановить войну, помирить богов и убедить Тёмного Властелина вернуть себе любовь.\n\nГлавное — верить в себя. И правильно дышать маткой.",
+  },
+  melissa: {
+    name: "Мелисса",
+    img:  'talala/melissa.webp',
+    desc: "",
+  },
+  losik: {
+    name: "Лосик",
+    img:  'talala/losik.webp',
+    desc: "Ты человек, который знает: просто так ничего не происходит. Меркурий ретроградный, Луна что-то там делает, а натальная карта вообще уже давно всё про тебя рассказала.\n\nТы любишь искать скрытые смыслы, разбирать себя по чакрам, знакам зодиака и архетипам и искренне веришь, что правильный вопрос Вселенной иногда важнее правильного ответа.\n\nТы всегда готова объяснить, почему человек ведёт себя именно так — главное, сначала узнать его знак зодиака, время рождения и где у него там Венера.\n\nЕсли что-то пошло не так — это не проблема. Это просто Вселенная намекает, что пора пересмотреть натальную карту.",
+  },
+  gelios: {
+    name: "Гелиос",
+    img:  'talala/gelios.webp',
+    desc: "Ты человек, который привык считать, что лучше знает, как всё должно быть устроено. У тебя есть принципы, правила и чёткое представление о том, что правильно, а что — категорически нет.\n\nТы серьёзный, властный и немного склонен забывать, что у других людей могут быть свои планы. Зато если ты понимаешь, что был неправ, можешь попытаться всё исправить — пусть даже спустя пятьдесят лет.\n\nГлавное — сначала установить правила мироздания, а потом уже разбираться с последствиями.",
+  },
+  pahom: {
+    name: "Пахом",
+    img:  'talala/pahom.webp',
+    desc: "Ты прирождённый лидер и человек с сильной интуицией. Ты привык сам принимать решения, строить планы и брать ответственность — особенно когда остальные уже не понимают, что происходит.\n\nТы умеешь сохранять серьёзный вид даже в самых безумных ситуациях и всегда находишь способ выкрутиться. Правда, иногда твоя уверенность в собственных силах слегка выходит за рамки разумного.\n\nТы готов спасти всех. Но если кристалла на всех не хватит — ну, кто первый успел, тот и герой.",
+  },
+  pshen: {
+    name: "Пшен",
+    img:  'talala/pshen.webp',
+    desc: "Ты суровый воин старой закалки, который уже понял цену силы и теперь предпочитает решать проблемы без лишней жестокости.\n\nТы не особо веришь в духовные практики, судьбу и прочую мистику — но и спорить с ними не собираешься. Ты просто делаешь то, что считаешь правильным, и не привык жаловаться на жизнь.\n\nМеньше слов, меньше мистики — больше дела.",
+  },
+  bulbuterion: {
+    name: "Бульбутарион",
+    img:  'talala/bulbuterion.webp',
+    desc: "Ты человек с характером настоящего русала: гордый, прямолинейный и совершенно не умеешь проходить мимо, когда кто-то ведёт себя по-свински.\n\nТы ценишь своих, не терпишь насмешек и предпочитаешь решать конфликты быстро и убедительно. Ты можешь оказаться в совершенно непривычной ситуации, но отступать не в твоём стиле.\n\nТы не чушпан. И пусть кто-нибудь попробует доказать обратное.",
+  },
+  grifon_andrey: {
+    name: "Грифон Андрей",
+    img:  'talala/grifon_andrey.webp',
+    desc: "Ты человек с очень высокой самооценкой. И, надо признать, основания для неё у тебя есть — ты привык быть самым могучим существом в комнате и считать, что остальные должны это учитывать.\n\nТы уважаешь порядок, иерархию и авторитеты, любишь рассуждать о богах и судьбе и искренне считаешь, что большинство земных существ могли бы вести себя немного разумнее.\n\nТы можешь спасти мир. Но сначала очень хочется, чтобы эти балбесы хотя бы перестали всё усложнять.",
+  },
+  angelin: {
+    name: "Ангелин",
+    img:  'talala/angelin.webp',
+    desc: "Ты человек, который совершенно не умеет проходить мимо чужих драм. Измена? Ссора? Кто-то опять обсуждает кого-то за спиной? Ты уже рядом.\n\nТы обожаешь людей, умеешь выслушать и почти всегда сначала ищешь способ договориться. Даже если перед тобой демон, паразит или кто-то, кто явно хочет тебя убить — почему бы для начала не обсудить условия?\n\nА если разговор зашёл в тупик — можно достать беляш.\n\nТы всегда найдёшь, что сказать. А если не найдёшь — у тебя есть беляш.",
+  },
 };
 
 /* Порядок разрешения ничьи: при равенстве очков побеждает тот, кто выше.
@@ -525,6 +577,7 @@ tg.expand();   // разворачиваем на всю доступную вы
   }
   for (const [key, c] of Object.entries(CHARACTERS)) {
     if (!c.img) console.error(`Герою "${key}" не задан img`);
+    if (!c.desc) console.warn(`У героя "${key}" пустой desc — на результате не будет текста`);
   }
   // Герой, которого нет ни в одном варианте, выпасть не может никогда.
   const used = new Set();
@@ -693,15 +746,11 @@ function renderQuestion() {
 }
 
 function renderResult() {
-  const scores = tally();
-  const winner = leader(scores);
-  const character = CHARACTERS[winner];
+  const character = CHARACTERS[leader(tally())];
   screen.textContent = '';
 
   const card = document.createElement('div');
   card.className = 'result';
-  card.innerHTML =
-    `<p class="who">Ты —</p><p class="name"></p><p class="desc"></p>`;
 
   const img = document.createElement('img');
   img.className = 'hero';
@@ -714,41 +763,30 @@ function renderResult() {
     stub.textContent = 'нет картинки: ' + character.img;
     img.replaceWith(stub);
   });
-  card.prepend(img);
-  card.querySelector('.name').textContent  = character.name;
-  card.querySelector('.desc').textContent  = character.desc;
-  screen.append(card);
 
-  // Разбивка по очкам — видно, насколько близко были остальные.
-  // Сортировка устойчивая, поэтому при равных очках сохраняется порядок TIEBREAK.
-  const ranked = [...TIEBREAK].sort((a, b) => scores[b] - scores[a]);
-  const top = scores[ranked[0]] || 1;
+  const who = document.createElement('p');
+  who.className = 'who';
+  who.textContent = 'Ты —';
 
-  const bars = document.createElement('div');
-  bars.className = 'bars';
-  for (const key of ranked) {
-    const row = document.createElement('div');
-    row.className = 'bar-row';
+  const name = document.createElement('p');
+  name.className = 'name';
+  name.textContent = character.name;
 
-    const label = document.createElement('div');
-    label.className = 'label';
-    label.textContent = CHARACTERS[key].name.split(' ')[0];
+  card.append(img, who, name);
 
-    const track = document.createElement('div');
-    track.className = 'track';
-    const fill = document.createElement('div');
-    fill.className = 'fill';
-    fill.style.width = (scores[key] / top) * 100 + '%';
-    track.append(fill);
-
-    const num = document.createElement('div');
-    num.className = 'num';
-    num.textContent = scores[key];
-
-    row.append(label, track, num);
-    bars.append(row);
+  // Описание многоабзацное: пустая строка в конфиге = новый абзац.
+  if (character.desc) {
+    const desc = document.createElement('div');
+    desc.className = 'desc';
+    for (const para of character.desc.split(/\n\s*\n/)) {
+      const el = document.createElement('p');
+      el.textContent = para.trim();
+      desc.append(el);
+    }
+    card.append(desc);
   }
-  screen.append(bars);
+
+  screen.append(card);
 
   primary.set('Пройти заново', () => {
     state.step = 0;
@@ -784,6 +822,7 @@ tg.onEvent('backButtonClicked', goBack);
 // Пользователь может переключить тему, не выходя из приложения.
 // Вне Telegram это событие не приходит, поэтому проверка не нужна.
 tg.onEvent('themeChanged', () => {
+  if (window.__forcedTheme) return;   // тема зафиксирована через ?theme=
   document.documentElement.dataset.theme = tg.colorScheme;
 });
 
