@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Кто ты из ветки Талалы?</title>
+
+<!-- Обязательно до нашего кода: этот скрипт создаёт window.Telegram.WebApp -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+  :root {
+    /* Fallback-палитра для обычного браузера.
+       Внутри Telegram эти же переменные перезапишет telegram-web-app.js. */
+    --bg:        var(--tg-theme-bg-color, #ffffff);
+    --text:      var(--tg-theme-text-color, #000000);
+    --hint:      var(--tg-theme-hint-color, #707579);
+    --link:      var(--tg-theme-link-color, #2481cc);
+    --btn:       var(--tg-theme-button-color, #2481cc);
+    --btn-text:  var(--tg-theme-button-text-color, #ffffff);
+    --section:   var(--tg-theme-secondary-bg-color, #f4f4f5);
+    --danger:    var(--tg-theme-destructive-text-color, #df3f40);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:      var(--tg-theme-bg-color, #17212b);
+      --text:    var(--tg-theme-text-color, #f5f5f5);
+      --hint:    var(--tg-theme-hint-color, #708499);
+      --section: var(--tg-theme-secondary-bg-color, #232e3c);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    /* Три объявления подряд: браузер берёт последнее, которое понимает.
+       Внутри Telegram правильная высота — только --tg-viewport-stable-height,
+       потому что 100vh там врёт на величину свёрнутой шапки. */
+    min-height: 100vh;
+    min-height: 100dvh;
+    min-height: var(--tg-viewport-stable-height, 100dvh);
+    display: flex;
+    flex-direction: column;
+    padding: 16px 14px 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* main забирает всё свободное место, поэтому футер всегда у нижнего края,
+     даже когда контента мало. При длинном вопросе sticky держит кнопку на виду. */
+  main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #screen { flex: 1; display: flex; flex-direction: column; }
+
+  /* ---------- тест ---------- */
+
+  .progress {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 13px; color: var(--hint);
+    margin-bottom: 14px;
+  }
+  .dots { display: flex; gap: 4px; flex-wrap: wrap; }
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: color-mix(in srgb, var(--hint) 35%, transparent);
+  }
+  .dot.done { background: var(--btn); }
+
+  /* Приветствие занимает всё свободное место над футером и центрируется в нём. */
+  .intro {
+    flex: 1;
+    display: flex; flex-direction: column; justify-content: center;
+    text-align: center; padding: 8px 4px 24px;
+  }
+  .intro h1 {
+    font-size: 28px; font-weight: 700; line-height: 1.2;
+    margin: 0 0 12px;
+  }
+  .intro p { color: var(--hint); font-size: 15px; margin: 0; }
+
+  .question {
+    font-size: 20px; font-weight: 600; line-height: 1.3;
+    margin: 0 0 18px;
+  }
+
+  .option {
+    display: block; width: 100%; text-align: left;
+    background: var(--section); color: var(--text);
+    border: 2px solid transparent; border-radius: 12px;
+    padding: 13px 15px; margin-bottom: 9px;
+    font: inherit; cursor: pointer;
+    transition: border-color .12s, background .12s;
+  }
+  .option:active { opacity: .75; }
+  .option.selected {
+    border-color: var(--btn);
+    background: color-mix(in srgb, var(--btn) 14%, var(--section));
+  }
+
+  /* ---------- результат ---------- */
+
+  .result {
+    text-align: center;
+    background: var(--section);
+    border-radius: 16px;
+    padding: 26px 18px;
+    margin-bottom: 18px;
+  }
+  /* Пропорции у картинок разные (0.56..0.70), поэтому высота по содержимому,
+     а не фиксированный aspect-ratio — иначе лица обрезало бы. */
+  .result .hero {
+    display: block; width: 100%; max-width: 240px; height: auto;
+    margin: 0 auto; border-radius: 12px;
+    background: color-mix(in srgb, var(--hint) 15%, transparent);
+  }
+  .result .hero-fallback {
+    display: grid; place-items: center;
+    width: 100%; max-width: 240px; aspect-ratio: 2 / 3;
+    margin: 0 auto; border-radius: 12px;
+    background: color-mix(in srgb, var(--hint) 15%, transparent);
+    color: var(--hint); font-size: 13px; text-align: center; padding: 12px;
+  }
+  .result .who {
+    font-size: 13px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--hint); margin: 14px 0 4px;
+  }
+  .result .name { font-size: 25px; font-weight: 700; margin: 0 0 10px; }
+  .result .desc { color: var(--hint); font-size: 15px; margin: 0; }
+
+  .bars { margin-bottom: 18px; }
+  .bar-row {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 14px; padding: 6px 2px;
+  }
+  .bar-row .label { flex: 0 0 38%; }
+  .bar-row .track {
+    flex: 1; height: 7px; border-radius: 4px;
+    background: color-mix(in srgb, var(--hint) 22%, transparent);
+    overflow: hidden;
+  }
+  .bar-row .fill { height: 100%; background: var(--btn); border-radius: 4px; }
+  .bar-row .num { flex: 0 0 auto; color: var(--hint); font-variant-numeric: tabular-nums; }
+
+  /* ---------- общее ---------- */
+
+  /* Кнопка всегда на экране: липнет к низу, контент уезжает под неё.
+     Нижний отступ с safe-area, чтобы не лезла под домашнюю полоску iPhone. */
+  .footer {
+    position: sticky; bottom: 0;
+    padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+    margin: 0 -14px;
+    background: var(--bg);
+  }
+  .footer::before {
+    content: ''; display: block;
+    position: absolute; left: 0; right: 0; top: -18px; height: 18px;
+    background: linear-gradient(to top, var(--bg), transparent);
+    pointer-events: none;
+  }
+
+  .primary {
+    display: block; width: 100%;
+    padding: 14px;
+    background: var(--btn); color: var(--btn-text);
+    border: none; border-radius: 11px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .primary:active:not(:disabled) { opacity: .75; }
+  .primary:disabled { opacity: .35; cursor: default; }
+
+  .banner {
+    background: color-mix(in srgb, var(--danger) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+    color: var(--danger);
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 16px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div id="banner"></div>
+
+<main>
+  <div class="progress" id="progress"></div>
+  <div id="screen"></div>
+</main>
+
+<footer class="footer">
+  <button class="primary" id="primary"></button>
+</footer>
+
+<script>
+'use strict';
+
+/* ════════════════════════════════════════════════════════════════
+   КОНФИГУРАЦИЯ ТЕСТА
+   Всё, что нужно менять — здесь. Движок ниже трогать не надо.
+
+   Персонажей можно добавлять/удалять: ключи произвольные, движок
+   считает очки по тем ключам, что перечислены в CHARACTERS.
+   img — путь к картинке относительно страницы, показывается на результате.
+   Вопросов и вариантов в вопросе тоже может быть любое число.
+   points — объект { ключ_героя: вес }. Вес прибавляется к очкам героя,
+   так что один вариант может дать 2 очка одному и 1 очко другому.
+   ════════════════════════════════════════════════════════════════ */
+
+// Заголовок приложения (ставится в document.title).
+const QUIZ_TITLE = 'Кто ты из ветки Талалы?';
+
+const CHARACTERS = {
+  milfeya:        { name: 'Милфея',        img: 'talala/milfea.webp', desc: '' },
+  talala:         { name: 'Талала',        img: 'talala/talala.webp', desc: '' },
+  melissa:        { name: 'Мелисса',       img: 'talala/melissa.webp', desc: '' },
+  losik:          { name: 'Лосик',         img: 'talala/losik.webp', desc: '' },
+  gelios:         { name: 'Гелиос',        img: 'talala/gelios.webp', desc: '' },
+  pahom:          { name: 'Пахом',         img: 'talala/pahom.webp', desc: '' },
+  pshen:          { name: 'Пшен',          img: 'talala/pshen.webp', desc: '' },
+  bulbuterion:    { name: 'Бульбутерион',  img: 'talala/bulbuterion.webp', desc: '' },
+  grifon_andrey:  { name: 'Грифон Андрей', img: 'talala/grifon_andrey.webp', desc: '' },
+  angelin:        { name: 'Ангелин',       img: 'talala/angelin.webp', desc: '' },
+};
+
+/* Порядок разрешения ничьи: при равенстве очков побеждает тот, кто выше.
+   Ничья на вершине случается примерно в 22% прохождений, поэтому порядок
+   заметно влияет на то, кто выпадает чаще. Этот подобран так, чтобы
+   выровнять частоты: разброс побед 8.7%..11.9% вместо 5.9%..14.1%.       */
+const TIEBREAK = [
+  'angelin', 'grifon_andrey', 'bulbuterion', 'pshen', 'gelios',
+  'pahom', 'losik', 'melissa', 'talala', 'milfeya',
+];
+
+const QUESTIONS = [
+  {
+    text: "Тебя облила машина из лужи. Твоя реакция?",
+    answers: [
+      { text: "Стою мокрый и думаю: «Ну за что…»", points: {"melissa": 2, "talala": 1} },
+      { text: "Наору вслед машине и обматерю водителя.", points: {"milfeya": 2, "bulbuterion": 1} },
+      { text: "Запоминаю номер машины. Это ещё не конец.", points: {"losik": 1, "grifon_andrey": 1} },
+      { text: "Догоню и дам пиздюлей.", points: {"gelios": 2} },
+      { text: "Обычно я на месте того, кто обливает.", points: {"pahom": 1} },
+    ],
+  },
+  {
+    text: "Идеальные выходные. Как ты их проведёшь?",
+    answers: [
+      { text: "Завалюсь дома: сериалы, игры, вкусная еда.", points: {"pahom": 2, "melissa": 1} },
+      { text: "Соберу друзей и куда-нибудь рванём.", points: {"angelin": 2, "bulbuterion": 1} },
+      { text: "Разберусь с жизнью: уберусь, оплачу счета, закуплюсь и подготовлюсь к следующей неделе.", points: {"gelios": 2, "grifon_andrey": 1} },
+      { text: "Пойду куда-нибудь потусить: кафе, кино, магазины, бар.", points: {"talala": 2} },
+      { text: "Проснусь — решу, что делать.", points: {"pshen": 1} },
+    ],
+  },
+  {
+    text: "Ты зашёл в книжный магазин. К какому разделу пойдёшь первым?",
+    answers: [
+      { text: "Классические романы.", points: {"melissa": 1} },
+      { text: "Психология и саморазвитие.", points: {"talala": 2, "milfeya": 1} },
+      { text: "Детективы и триллеры.", points: {"grifon_andrey": 2} },
+      { text: "Книги по мировой истории.", points: {"gelios": 2} },
+      { text: "Сканворды и сборники анекдотов.", points: {"pahom": 2, "pshen": 1} },
+      { text: "Я вообще пришёл за канцелярией: блокнотами, наклейками и всем таким.", points: {"losik": 2, "bulbuterion": 1} },
+    ],
+  },
+  {
+    text: "Кто тебе больше всего нравится из «Смешариков»?",
+    answers: [
+      { text: "Крош", points: {"talala": 2, "bulbuterion": 1} },
+      { text: "Ёжик", points: {"melissa": 2} },
+      { text: "Нюша", points: {"losik": 1} },
+      { text: "Бараш", points: {"milfeya": 2} },
+      { text: "Лосяш", points: {"grifon_andrey": 1} },
+      { text: "Копатыч", points: {"pshen": 1} },
+      { text: "Кар-Карыч", points: {"gelios": 1} },
+      { text: "Совунья", points: {"pahom": 1} },
+    ],
+  },
+  {
+    text: "Тебе звонят на мобильный с неизвестного номера. Что делаешь?",
+    answers: [
+      { text: "Сбрасываю.", points: {"angelin": 2} },
+      { text: "Спокойно беру трубку.", points: {"grifon_andrey": 2, "pshen": 1} },
+      { text: "Не беру, но потом пробиваю номер.", points: {"talala": 2, "bulbuterion": 1} },
+      { text: "Притворюсь, что не слышу.", points: {"melissa": 2} },
+      { text: "Достаю телефон из полиэтиленового пакета и спрашиваю: «Что вам надо?»", points: {"pahom": 2, "gelios": 1} },
+    ],
+  },
+  {
+    text: "В магазине перед тобой человек с одной шоколадкой, а у тебя полная корзина. Что делаешь?",
+    answers: [
+      { text: "Пропущу его без раздумий.", points: {"losik": 2, "melissa": 1} },
+      { text: "Буду стоять и ждать своей очереди.", points: {"angelin": 2, "pahom": 1} },
+      { text: "Сначала посмотрю, что за шоколадка. Может, себе такую же взять.", points: {"grifon_andrey": 2, "bulbuterion": 1} },
+      { text: "Попрошу кассира пробить мою корзину побыстрее, потому что я уже устал.", points: {"angelin": 2, "milfeya": 2} },
+    ],
+  },
+  {
+    text: "Тебе написали: «Нам надо поговорить». Что делаешь?",
+    answers: [
+      { text: "Сразу пишу: «Что ты натворил?»", points: {"grifon_andrey": 2, "losik": 1} },
+      { text: "Начинаю вспоминать, что я мог натворить.", points: {"talala": 2, "pshen": 1} },
+      { text: "Отвечаю: «Давай».", points: {"angelin": 2, "gelios": 1} },
+      { text: "Заблокирую контакт.", points: {"pahom": 1} },
+    ],
+  },
+  {
+    text: "Ты случайно лайкнул пост человека пятилетней давности. Что делаешь?",
+    answers: [
+      { text: "Убираю лайк и делаю вид, что ничего не было.", points: {"angelin": 1, "pshen": 1} },
+      { text: "Оставляю. Ну увидит и увидит.", points: {"melissa": 2, "losik": 2} },
+      { text: "Сразу закрываю приложение и больше туда не захожу.", points: {"gelios": 1, "grifon_andrey": 1} },
+      { text: "Лайкаю ещё пару старых постов, чтобы это выглядело специально.", points: {"milfeya": 2, "bulbuterion": 1} },
+    ],
+  },
+  {
+    text: "В компании кто-то говорит: «Давайте сфоткаемся». Что делаешь?",
+    answers: [
+      { text: "Встаю в первый ряд.", points: {"losik": 2, "gelios": 2, "grifon_andrey": 1} },
+      { text: "Беру на себя роль фотографа.", points: {"pshen": 2} },
+      { text: "Сначала поправлю волосы и одежду, потом можно.", points: {"angelin": 2, "milfeya": 1} },
+      { text: "Делаю вид, что мне срочно нужно в туалет.", points: {"pahom": 2} },
+      { text: "Затеряюсь где-нибудь в толпе или встану сбоку.", points: {"melissa": 2} },
+    ],
+  },
+  {
+    text: "Кем бы ты предпочёл работать?",
+    answers: [
+      { text: "Проводником.", points: {"pahom": 2} },
+      { text: "Няней в детском саду.", points: {"losik": 2, "melissa": 1} },
+      { text: "Водителем крана.", points: {"pshen": 2} },
+      { text: "Сотрудником МФЦ.", points: {"milfeya": 1} },
+      { text: "Таксистом.", points: {"grifon_andrey": 2} },
+    ],
+  },
+  {
+    text: "Ты случайно стал владельцем небольшого острова. Что там будет?",
+    answers: [
+      { text: "Огромный дом и бассейн для меня одного.", points: {"grifon_andrey": 2, "milfeya": 1} },
+      { text: "Бар, музыка и постоянные тусовки.", points: {"pshen": 2} },
+      { text: "Сделаю заповедник для животных.", points: {"bulbuterion": 2} },
+      { text: "Бункер. На всякий случай.", points: {"gelios": 2, "talala": 1} },
+      { text: "Отель «всё включено» — пусть приносит деньги.", points: {"angelin": 1} },
+    ],
+  },
+  {
+    text: "Ты находишь кнопку с надписью «НЕ НАЖИМАТЬ». Что делаешь?",
+    answers: [
+      { text: "Не нажимаю. Я что, читать не умею?", points: {"pshen": 2, "melissa": 1} },
+      { text: "Нажимаю. Конечно нажимаю.", points: {"losik": 1, "milfeya": 1} },
+      { text: "Сначала выясню, что произойдёт.", points: {"talala": 2} },
+      { text: "Позову кого-нибудь, пусть нажмёт первым.", points: {"bulbuterion": 2, "grifon_andrey": 1} },
+    ],
+  },
+  {
+    text: "Ты пришёл на вечеринку и понял, что никого не знаешь. Что делаешь?",
+    answers: [
+      { text: "Я её сам и организовал.", points: {"gelios": 1} },
+      { text: "Найду, с кем буду общаться до конца вечера.", points: {"talala": 2, "milfeya": 1} },
+      { text: "Стою где-нибудь в уголке и жду, пока кто-нибудь сам подойдёт.", points: {"melissa": 2} },
+      { text: "Иду к бару или за едой.", points: {"grifon_andrey": 1} },
+      { text: "Через 10 минут уже общаюсь со всеми.", points: {"losik": 2, "bulbuterion": 1} },
+      { text: "Ухожу.", points: {"angelin": 2, "pahom": 1} },
+    ],
+  },
+  {
+    text: "Тебе неожиданно подарили 10 000 рублей. Что сделаешь?",
+    answers: [
+      { text: "Отложу.", points: {"gelios": 2, "melissa": 1} },
+      { text: "Закажу на все деньги доставку еды.", points: {"pshen": 2, "milfeya": 1} },
+      { text: "Потрачу на то, что давно хотел.", points: {"talala": 2, "losik": 1} },
+      { text: "Закажу ортопедические стельки.", points: {"pahom": 2, "gelios": 1} },
+      { text: "Куплю билет на концерт.", points: {"bulbuterion": 2} },
+    ],
+  },
+  {
+    text: "Ты опоздал на встречу на 20 минут. Что делаешь?",
+    answers: [
+      { text: "Извиняюсь и объясняю, что случилось.", points: {"losik": 2, "melissa": 1} },
+      { text: "Пишу заранее, что опоздаю.", points: {"talala": 2, "milfeya": 2} },
+      { text: "Сделаю вид, что пришёл вовремя.", points: {"pshen": 2, "pahom": 1} },
+      { text: "Выдумаю убедительную причину.", points: {"bulbuterion": 2} },
+      { text: "«Ну я же пришёл».", points: {"gelios": 2} },
+    ],
+  },
+  {
+    text: "Тебе нужно выбрать место в самолёте. Что выберешь?",
+    answers: [
+      { text: "У окна.", points: {"gelios": 1} },
+      { text: "У прохода.", points: {"bulbuterion": 1} },
+      { text: "Где угодно, мне всё равно.", points: {"milfeya": 2} },
+      { text: "Подальше от туалета.", points: {"melissa": 2, "losik": 1} },
+      { text: "Поближе к туалету.", points: {"pshen": 2, "pahom": 1} },
+      { text: "Место с дополнительным пространством для ног.", points: {"grifon_andrey": 1} },
+      { text: "Где будет дешевле.", points: {"angelin": 2} },
+    ],
+  },
+  {
+    text: "Тебе предлагают бесполезную суперсилу. Что выберешь?",
+    answers: [
+      { text: "Разговаривать с голубями.", points: {"angelin": 1} },
+      { text: "Безошибочно определять спелый арбуз.", points: {"pshen": 2} },
+      { text: "Телепортировать один носок.", points: {"pahom": 2} },
+      { text: "Уметь определять калорийность на глаз.", points: {"talala": 2, "losik": 1} },
+      { text: "Знать часовые пояса всех городов.", points: {"milfeya": 2} },
+      { text: "Просыпаться за минуту до будильника.", points: {"bulbuterion": 2} },
+    ],
+  },
+  {
+    text: "Тебе дают миллион евро, но всю жизнь за тобой будет медленно ходить один гусь. Что выберешь?",
+    answers: [
+      { text: "Беру миллион.", points: {"angelin": 1} },
+      { text: "Не беру, гусь меня достанет.", points: {"milfeya": 2} },
+      { text: "Соглашусь. На ужин отпраздную жареным гусем.", points: {"pshen": 2} },
+      { text: "Возьму миллион и подружусь с гусём.", points: {"grifon_andrey": 2, "losik": 1} },
+      { text: "А что будет, если я уеду в другую страну?", points: {"talala": 1} },
+      { text: "А можно вместо гуся другое животное?", points: {"gelios": 1} },
+    ],
+  },
+  {
+    text: "Ты можешь узнать одну абсолютную правду. Что выберешь?",
+    answers: [
+      { text: "Кто я в прошлой жизни?", points: {"bulbuterion": 2} },
+      { text: "Что обо мне думают друзья?", points: {"gelios": 1, "talala": 1} },
+      { text: "Что там после смерти?", points: {"pahom": 2, "losik": 1} },
+      { text: "Кто любовь всей моей жизни?", points: {"melissa": 2} },
+      { text: "Какой у меня секретный талант?", points: {"milfeya": 2, "talala": 1} },
+    ],
+  },
+  {
+    text: "Какой фильм тебе больше всего понравился из последних просмотренных?",
+    answers: [
+      { text: "«Человек-паук»", points: {"bulbuterion": 2, "grifon_andrey": 1} },
+      { text: "«Колобок»", points: {"pahom": 2, "pshen": 1} },
+      { text: "«Дьявол носит Prada 2»", points: {"losik": 2, "talala": 1} },
+      { text: "«Резидент Ивел»", points: {"angelin": 2, "gelios": 2, "milfeya": 1} },
+      { text: "«История игрушек 5»", points: {"melissa": 2} },
+    ],
+  },
+];
+
+/* ════════════════════════════════════════════════════════════════
+   ДВИЖОК — ниже конфигурацию только читают
+   ════════════════════════════════════════════════════════════════ */
+
+const tg = window.Telegram?.WebApp;
+
+if (!tg) {
+  document.getElementById('banner').innerHTML =
+    'SDK не загрузился: <code>window.Telegram.WebApp</code> отсутствует.';
+  throw new Error('Telegram WebApp SDK not available');
+}
+
+const insideTelegram = Boolean(tg.initData) || tg.platform !== 'unknown';
+
+document.title = QUIZ_TITLE;
+
+tg.ready();    // говорим клиенту «я отрисовался», он убирает лоадер
+tg.expand();   // разворачиваем на всю доступную высоту
+
+/* ---------- проверка конфига ---------- */
+// Опечатка в ключе персонажа иначе молча съест очки.
+(function validateConfig() {
+  const known = new Set(Object.keys(CHARACTERS));
+  for (const key of TIEBREAK) {
+    if (!known.has(key)) console.error(`TIEBREAK: неизвестный персонаж "${key}"`);
+  }
+  for (const key of known) {
+    if (!TIEBREAK.includes(key)) console.error(`TIEBREAK: персонаж "${key}" не указан`);
+  }
+  for (const [key, c] of Object.entries(CHARACTERS)) {
+    if (!c.img) console.error(`Герою "${key}" не задан img`);
+  }
+  // Герой, которого нет ни в одном варианте, выпасть не может никогда.
+  const used = new Set();
+  for (const q of QUESTIONS) for (const a of q.answers) for (const k of Object.keys(a.points || {})) used.add(k);
+  for (const key of known) {
+    if (!used.has(key)) console.warn(`Герой "${key}" не встречается ни в одном варианте — он недостижим`);
+  }
+  QUESTIONS.forEach((q, qi) => {
+    q.answers.forEach((a, ai) => {
+      const entries = Object.entries(a.points || {});
+      if (!entries.length) console.error(`Вопрос ${qi + 1}, вариант ${ai + 1}: пустой points`);
+      for (const [key, weight] of entries) {
+        if (!known.has(key)) console.error(`Вопрос ${qi + 1}, вариант ${ai + 1}: неизвестный герой "${key}"`);
+        if (!Number.isFinite(weight) || weight <= 0) console.error(`Вопрос ${qi + 1}, вариант ${ai + 1}: вес "${key}" должен быть положительным числом, а не ${weight}`);
+      }
+    });
+  });
+})();
+
+/* ---------- состояние ---------- */
+
+const INTRO = -1;
+
+const state = {
+  step: INTRO,      // INTRO → приветствие; 0..N-1 → вопрос; N → результат
+  picked: [],       // picked[i] = индекс выбранного варианта в вопросе i
+};
+
+/* ---------- главная кнопка ----------
+   Своя кнопка в футере, а не нативная MainButton: она видна всегда и
+   выглядит одинаково в Telegram и в браузере. Когда действие недоступно,
+   кнопка не исчезает, а гаснет — экран не прыгает.
+   Обработчик один на всё время жизни, действие берётся из primary.action. */
+
+const domPrimary = document.getElementById('primary');
+
+const primary = {
+  action: null,
+  set(text, action) {
+    this.action = action || null;
+    domPrimary.textContent = text;
+    domPrimary.disabled = !action;
+  },
+  fire() { this.action?.(); },
+};
+
+domPrimary.addEventListener('click', () => primary.fire());
+
+/* ---------- подсчёт очков ---------- */
+
+function tally() {
+  const scores = {};
+  for (const key of Object.keys(CHARACTERS)) scores[key] = 0;
+  state.picked.forEach((answerIndex, questionIndex) => {
+    const points = QUESTIONS[questionIndex].answers[answerIndex].points;
+    for (const [key, weight] of Object.entries(points)) {
+      scores[key] += weight;
+    }
+  });
+  return scores;
+}
+
+// Идём в порядке TIEBREAK и меняем лидера только при строгом превосходстве,
+// поэтому при равенстве очков побеждает тот, кто объявлен раньше.
+function leader(scores) {
+  return TIEBREAK.reduce((best, key) => (scores[key] > scores[best] ? key : best), TIEBREAK[0]);
+}
+
+/* ---------- отрисовка ---------- */
+
+const screen = document.getElementById('screen');
+const progressBox = document.getElementById('progress');
+
+function haptic(kind) {
+  try {
+    if (kind === 'select') tg.HapticFeedback.selectionChanged();
+    else tg.HapticFeedback.notificationOccurred('success');
+  } catch (_) { /* вне Telegram молчим */ }
+}
+
+function renderProgress() {
+  progressBox.textContent = '';
+  if (state.step === INTRO || state.step >= QUESTIONS.length) return;
+
+  const label = document.createElement('span');
+  label.textContent = `Вопрос ${state.step + 1} из ${QUESTIONS.length}`;
+  const dots = document.createElement('div');
+  dots.className = 'dots';
+  for (let i = 0; i < QUESTIONS.length; i++) {
+    const dot = document.createElement('div');
+    dot.className = i <= state.step ? 'dot done' : 'dot';
+    dots.append(dot);
+  }
+  progressBox.append(label, dots);
+}
+
+function renderIntro() {
+  screen.textContent = '';
+
+  const box = document.createElement('div');
+  box.className = 'intro';
+
+  const title = document.createElement('h1');
+  title.textContent = QUIZ_TITLE;
+
+  const sub = document.createElement('p');
+  sub.textContent = `${QUESTIONS.length} ${plural(QUESTIONS.length, 'вопрос', 'вопроса', 'вопросов')}`
+    + ` · ${TIEBREAK.length} ${plural(TIEBREAK.length, 'герой', 'героя', 'героев')}`;
+
+  box.append(title, sub);
+  screen.append(box);
+
+  primary.set('Начать', () => { state.step = 0; render(); });
+}
+
+// Русские числительные: 1 вопрос, 2 вопроса, 5 вопросов.
+function plural(n, one, few, many) {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  const mod10 = n % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}
+
+function renderQuestion() {
+  const q = QUESTIONS[state.step];
+  screen.textContent = '';
+
+  const title = document.createElement('h1');
+  title.className = 'question';
+  title.textContent = q.text;
+  screen.append(title);
+
+  q.answers.forEach((answer, index) => {
+    const btn = document.createElement('button');
+    btn.className = 'option' + (state.picked[state.step] === index ? ' selected' : '');
+    btn.type = 'button';
+    btn.textContent = answer.text;
+    btn.addEventListener('click', () => {
+      state.picked[state.step] = index;
+      haptic('select');
+      render();
+    });
+    screen.append(btn);
+  });
+
+  const isLast = state.step === QUESTIONS.length - 1;
+  if (state.picked[state.step] === undefined) {
+    // Пока вариант не выбран, идти некуда — кнопка остаётся на месте, но гаснет.
+    primary.set(isLast ? 'Узнать результат' : 'Дальше', null);
+  } else {
+    if (isLast) {
+      // Файлы тяжёлые, поэтому тянем картинку победителя заранее —
+      // пока человек жмёт кнопку, она уже успевает прилететь.
+      const img = new Image();
+      img.src = CHARACTERS[leader(tally())].img;
+    }
+
+    primary.set(isLast ? 'Узнать результат' : 'Дальше', () => {
+      state.step += 1;
+      if (state.step === QUESTIONS.length) haptic('done');
+      render();
+    });
+  }
+}
+
+function renderResult() {
+  const scores = tally();
+  const winner = leader(scores);
+  const character = CHARACTERS[winner];
+  screen.textContent = '';
+
+  const card = document.createElement('div');
+  card.className = 'result';
+  card.innerHTML =
+    `<p class="who">Ты —</p><p class="name"></p><p class="desc"></p>`;
+
+  const img = document.createElement('img');
+  img.className = 'hero';
+  img.src = character.img;
+  img.alt = character.name;
+  // Если картинка не нашлась, вместо битой иконки показываем подпись.
+  img.addEventListener('error', () => {
+    const stub = document.createElement('div');
+    stub.className = 'hero-fallback';
+    stub.textContent = 'нет картинки: ' + character.img;
+    img.replaceWith(stub);
+  });
+  card.prepend(img);
+  card.querySelector('.name').textContent  = character.name;
+  card.querySelector('.desc').textContent  = character.desc;
+  screen.append(card);
+
+  // Разбивка по очкам — видно, насколько близко были остальные.
+  // Сортировка устойчивая, поэтому при равных очках сохраняется порядок TIEBREAK.
+  const ranked = [...TIEBREAK].sort((a, b) => scores[b] - scores[a]);
+  const top = scores[ranked[0]] || 1;
+
+  const bars = document.createElement('div');
+  bars.className = 'bars';
+  for (const key of ranked) {
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = CHARACTERS[key].name.split(' ')[0];
+
+    const track = document.createElement('div');
+    track.className = 'track';
+    const fill = document.createElement('div');
+    fill.className = 'fill';
+    fill.style.width = (scores[key] / top) * 100 + '%';
+    track.append(fill);
+
+    const num = document.createElement('div');
+    num.className = 'num';
+    num.textContent = scores[key];
+
+    row.append(label, track, num);
+    bars.append(row);
+  }
+  screen.append(bars);
+
+  primary.set('Пройти заново', () => {
+    state.step = 0;
+    state.picked = [];
+    render();
+  });
+}
+
+function render() {
+  renderProgress();
+  if (state.step === INTRO) renderIntro();
+  else if (state.step >= QUESTIONS.length) renderResult();
+  else renderQuestion();
+
+  // Назад есть везде, кроме приветствия.
+  // Вне Telegram BackButton недоступна — не трогаем, чтобы не сорить в консоль.
+  if (insideTelegram) {
+    if (state.step > INTRO) tg.BackButton.show();
+    else tg.BackButton.hide();
+  }
+
+  window.scrollTo(0, 0);
+}
+
+function goBack() {
+  if (state.step === INTRO) return;
+  state.step -= 1;
+  render();
+}
+
+tg.onEvent('backButtonClicked', goBack);
+
+render();
+</script>
+</body>
+</html>
