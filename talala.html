@@ -704,7 +704,7 @@ function shareStory(key) {
   if (user) {
     params.widget_link = {
       url: testLink(),
-      name: `Я — ${character.name}\n${QUIZ_TITLE}`,
+      name: `Я — ${character.name}\n\n${QUIZ_TITLE}`,
     };
   }
   tg.shareToStory(new URL(character.img, location.href).href, params);
