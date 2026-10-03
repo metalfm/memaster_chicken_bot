@@ -701,7 +701,7 @@ function shareStory(key) {
   const character = CHARACTERS[key];
   const params = {};
   const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
-  if (user && user.is_premium) {
+  if (user) {
     params.widget_link = {
       url: testLink(),
       name: `Я — ${character.name}\n${QUIZ_TITLE}`,
