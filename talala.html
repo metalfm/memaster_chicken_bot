@@ -31,6 +31,33 @@
     batch_requests: false,
     persistence: 'localStorage',
   })
+
+  /* Личность задаём здесь, а не в движке внизу страницы.
+     Между init и первым нашим событием автокаптур успевает отправить
+     [Auto] Page View, а запись сессии — начаться. Если identify вызвать
+     позже, всё это достанется анонимному $device:… и потом будет
+     склеиваться отдельным событием $identify.
+
+     SDK Telegram подключён выше, поэтому user уже доступен. Вызовы до
+     загрузки библиотеки с CDN не теряются: сниппет копит их в очереди
+     и проигрывает по порядку.
+
+     Вне Telegram user нет — остаёмся анонимом, так и надо. */
+  try {
+    var tgUser = window.Telegram
+      && window.Telegram.WebApp
+      && window.Telegram.WebApp.initDataUnsafe
+      && window.Telegram.WebApp.initDataUnsafe.user;
+    if (tgUser) {
+      mixpanel.identify('tg_' + tgUser.id);
+      mixpanel.people.set({
+        $name: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' '),
+        username: tgUser.username || null,
+        language: tgUser.language_code || null,
+        is_premium: Boolean(tgUser.is_premium),
+      });
+    }
+  } catch (e) { /* аналитика не должна мешать странице */ }
 </script>
 
 <script>
@@ -697,19 +724,10 @@ const analytics = (() => {
     quiz_questions: QUESTIONS.length,
   });
 
-  try {
-    const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
-    if (user) {
-      mixpanel.identify('tg_' + user.id);
-      mixpanel.people.set({
-        $name: [user.first_name, user.last_name].filter(Boolean).join(' '),
-        username: user.username || null,
-        language: user.language_code || null,
-        is_premium: Boolean(user.is_premium),
-      });
-    }
-    mixpanel.register(superProps());
-  } catch (e) { /* аналитика молчит и не мешает */ }
+  // identify() и профиль пользователя — в <head>, сразу после init.
+  // Здесь только то, что зависит от конфига теста и темы: и то и другое
+  // к моменту init ещё не готово.
+  try { mixpanel.register(superProps()); } catch (e) { /* молчим */ }
 
   return {
     track(name, props) {
