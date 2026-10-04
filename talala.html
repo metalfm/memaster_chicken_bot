@@ -19,6 +19,17 @@
     autocapture: true,
     record_sessions_percent: 100,
     api_host: 'https://api-eu.mixpanel.com',
+
+    // Без этих двух опций события теряются именно в Telegram.
+    //
+    // batch_requests: по умолчанию Mixpanel копит события и отправляет раз
+    // в секунду. Но shareToStory() и openTelegramLink() усыпляют WebView
+    // мгновенно — то есть пропадали бы ровно события шеринга, самые нужные.
+    //
+    // persistence: куки в WebView ненадёжны, localStorage живёт дольше.
+    // Личность всё равно задаём вручную через identify() по id из Telegram.
+    batch_requests: false,
+    persistence: 'localStorage',
   })
 </script>
 
@@ -648,6 +659,7 @@ const state = {
   step: INTRO,      // INTRO → приветствие; 0..N-1 → вопрос; N → результат
   picked: [],       // picked[i] = индекс выбранного варианта в вопросе i
   shared: null,     // ключ героя, если пришли по ссылке с ?startapp=
+  startedAt: 0,     // Date.now() начала прохождения — для длительности теста
 };
 
 /* Результат по ссылке. Telegram кладёт значение startapp в start_param;
@@ -661,6 +673,59 @@ const state = {
   } catch (e) { return; }
   if (key && Object.prototype.hasOwnProperty.call(CHARACTERS, key)) state.shared = key;
 })();
+
+/* ---------- аналитика ----------
+   Mixpanel подключён в <head>. Всё идёт через analytics.track(), который
+   глушит любые ошибки: упавшая аналитика не должна ронять тест. Если убрать
+   сниппет из <head>, функции молча станут пустышками — это и есть выключатель.
+
+   distinct_id берём из id пользователя Telegram, а не из хранилища браузера:
+   WebView чистит его между запусками, и один человек иначе расползается на
+   десяток анонимов, а с одного id видно все заходы и с телефона, и с десктопа.
+   initDataUnsafe не проверен подписью, но для аналитики это допустимо —
+   подделывать себе же статистику смысла нет. */
+
+const analytics = (() => {
+  if (typeof mixpanel === 'undefined') return { track() {}, refresh() {} };
+
+  // Прилипают ко всем событиям — потом можно резать воронку по платформе и теме.
+  const superProps = () => ({
+    tg_platform: tg.platform,
+    tg_version: tg.version,
+    color_scheme: document.documentElement.dataset.theme || tg.colorScheme,
+    inside_telegram: Boolean(tg.initData) || tg.platform !== 'unknown',
+    quiz_questions: QUESTIONS.length,
+  });
+
+  try {
+    const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+    if (user) {
+      mixpanel.identify('tg_' + user.id);
+      mixpanel.people.set({
+        $name: [user.first_name, user.last_name].filter(Boolean).join(' '),
+        username: user.username || null,
+        language: user.language_code || null,
+        is_premium: Boolean(user.is_premium),
+      });
+    }
+    mixpanel.register(superProps());
+  } catch (e) { /* аналитика молчит и не мешает */ }
+
+  return {
+    track(name, props) {
+      try { mixpanel.track(name, props); } catch (e) { /* молчим */ }
+    },
+    // Тему можно переключить, не выходя из приложения.
+    refresh() {
+      try { mixpanel.register(superProps()); } catch (e) { /* молчим */ }
+    },
+  };
+})();
+
+analytics.track('App Opened', {
+  entry: state.shared ? 'shared_link' : 'direct',
+  shared_hero: state.shared ? CHARACTERS[state.shared].name : null,
+});
 
 /* ---------- главная кнопка ----------
    Своя кнопка в футере, а не нативная MainButton: она видна всегда и
@@ -704,6 +769,7 @@ function testLink() {
 // чтобы кнопку можно было проверить в браузере.
 function shareToChat(key) {
   const character = CHARACTERS[key];
+  trackShare('chat', key);
   const url = 'https://t.me/share/url'
     + '?url=' + encodeURIComponent(testLink())
     + '&text=' + encodeURIComponent(`Я — ${character.name}. А ты кто?`);
@@ -716,6 +782,7 @@ function shareToChat(key) {
 // условно — иначе у остальных вызов отвалится.
 function shareStory(key) {
   const character = CHARACTERS[key];
+  trackShare('story', key);
   const params = {};
   const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
   if (user) {
@@ -725,6 +792,18 @@ function shareStory(key) {
     };
   }
   tg.shareToStory(new URL(character.img, location.href).href, params);
+}
+
+/* Событие отправляем до вызова Telegram, а не после: оба вызова сворачивают
+   WebView, и код после них может не успеть выполниться. Запрос с
+   batch_requests: false уходит сразу, так что порядок именно такой. */
+function trackShare(method, key) {
+  analytics.track('Result Shared', {
+    method,                                   // 'chat' | 'story'
+    hero: key,
+    hero_name: CHARACTERS[key].name,
+    own_result: !state.shared,                // false — делится чужим из ссылки
+  });
 }
 
 /* ---------- подсчёт очков ---------- */
@@ -791,10 +870,23 @@ function renderIntro() {
   box.append(title, sub);
   screen.append(box);
 
-  primary.set('Начать', () => { state.step = 0; render(); });
+  primary.set('Начать', () => { startQuiz('intro'); });
 }
 
 // Русские числительные: 1 вопрос, 2 вопроса, 5 вопросов.
+/* Один вход на все способы начать: и с приветствия, и «пройти заново», и
+   «пройти тест» с чужого результата. Поэтому событие тоже одно, с разным
+   source — воронка App Opened → Quiz Started → … собирается целиком,
+   независимо от того, как человек пришёл. */
+function startQuiz(source, previousHero) {
+  analytics.track('Quiz Started', { source, previous_hero: previousHero || null });
+  state.shared = null;
+  state.step = 0;
+  state.picked = [];
+  state.startedAt = Date.now();
+  render();
+}
+
 function plural(n, one, few, many) {
   const mod100 = n % 100;
   if (mod100 >= 11 && mod100 <= 14) return many;
@@ -839,11 +931,44 @@ function renderQuestion() {
     }
 
     primary.set(isLast ? 'Узнать результат' : 'Дальше', () => {
+      // Событие на переходе, а не на клике по варианту: иначе перебор
+      // вариантов в одном вопросе давал бы по событию на каждое касание.
+      const picked = state.picked[state.step];
+      const answer = q.answers[picked];
+      analytics.track('Question Answered', {
+        question_number: state.step + 1,       // 1..N, как человек их видит
+        question_text: q.text,
+        answer_number: picked + 1,
+        answer_text: answer.text,
+        answer_heroes: Object.keys(answer.points || {}),
+      });
+
       state.step += 1;
-      if (state.step === QUESTIONS.length) haptic('done');
+      if (state.step === QUESTIONS.length) {
+        haptic('done');
+        trackCompleted();
+      }
       render();
     });
   }
+}
+
+/* Вызывается из перехода на последнем вопросе, а не из renderResult:
+   результат перерисовывается при смене темы, и событие бы дублировалось. */
+function trackCompleted() {
+  const scores = tally();
+  const hero = leader(scores);
+  const top = Math.max(...Object.values(scores));
+  analytics.track('Quiz Completed', {
+    hero,
+    hero_name: CHARACTERS[hero].name,
+    hero_score: scores[hero],
+    // Сколько героев набрали столько же: 1 — чистая победа, больше — ничья,
+    // и тогда героя выбрал порядок TIEBREAK, а не ответы.
+    tied_at_top: Object.values(scores).filter(v => v === top).length,
+    duration_sec: state.startedAt ? Math.round((Date.now() - state.startedAt) / 1000) : null,
+    scores,
+  });
 }
 
 function renderResult() {
@@ -912,10 +1037,7 @@ function renderResult() {
   screen.append(share);
 
   primary.set(state.shared ? 'Пройти тест' : 'Пройти заново', () => {
-    state.shared = null;
-    state.step = 0;
-    state.picked = [];
-    render();
+    startQuiz(state.shared ? 'shared_result' : 'restart', key);
   });
 }
 
@@ -949,6 +1071,7 @@ tg.onEvent('backButtonClicked', goBack);
 tg.onEvent('themeChanged', () => {
   if (window.__forcedTheme) return;   // тема зафиксирована через ?theme=
   document.documentElement.dataset.theme = tg.colorScheme;
+  analytics.refresh();
 });
 
 render();
